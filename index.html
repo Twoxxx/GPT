@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GPT-6" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>Pocket GPT-6</title>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <button id="menuBtn" class="icon-btn" aria-label="Чаты">☰</button>
+      <button id="modelBtn" class="model-pill" aria-label="Выбрать модель">
+        <span id="modelLabel">GPT-6.1 Sol</span>
+        <span class="chev">⌄</span>
+      </button>
+      <button id="settingsBtn" class="icon-btn" aria-label="Настройки">⚙︎</button>
+    </header>
+
+    <div class="budget-strip" id="budgetStrip">
+      <div class="budget-copy"><span id="monthCost">$0.00</span><span id="budgetLabel">из $20 / месяц</span></div>
+      <div class="budget-track"><div id="budgetFill" class="budget-fill"></div></div>
+    </div>
+
+    <main id="chat" class="chat"></main>
+
+    <div id="welcome" class="welcome">
+      <div class="orb">6</div>
+      <h1>Что делаем?</h1>
+      <p>Твой GPT‑6 через API. История и настройки хранятся на этом устройстве.</p>
+      <div class="suggestions">
+        <button class="suggestion">Разбери сложную задачу по шагам</button>
+        <button class="suggestion">Помоги с кодом и архитектурой</button>
+        <button class="suggestion">Придумай сильный сценарий</button>
+      </div>
+    </div>
+
+    <form id="composer" class="composer">
+      <textarea id="prompt" rows="1" placeholder="Сообщение…" autocomplete="off"></textarea>
+      <button id="sendBtn" type="submit" class="send-btn" aria-label="Отправить">↑</button>
+      <button id="stopBtn" type="button" class="stop-btn hidden" aria-label="Остановить">■</button>
+    </form>
+
+    <aside id="drawer" class="drawer hidden-panel" aria-hidden="true">
+      <div class="sheet-head">
+        <strong>Чаты</strong>
+        <button id="closeDrawer" class="icon-btn">×</button>
+      </div>
+      <button id="newChatBtn" class="primary-wide">＋ Новый чат</button>
+      <div id="chatList" class="chat-list"></div>
+    </aside>
+
+    <section id="settings" class="sheet hidden-panel" aria-hidden="true">
+      <div class="sheet-head">
+        <strong>Настройки</strong>
+        <button id="closeSettings" class="icon-btn">×</button>
+      </div>
+      <div class="setting-group">
+        <label>Модель</label>
+        <select id="modelSelect">
+          <option value="gpt-6-luna">GPT-6 Luna — экономно</option>
+          <option value="gpt-6.1-sol">GPT-6.1 Sol — баланс</option>
+          <option value="gpt-6-astra">GPT-6 Astra — максимум</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <label>Глубина размышления</label>
+        <div id="reasoningOptions" class="segmented">
+          <button data-r="low">Low</button><button data-r="medium">Medium</button><button data-r="high">High</button><button data-r="xhigh">XHigh</button><button data-r="max">Max</button>
+        </div>
+      </div>
+      <div class="setting-group">
+        <label for="budgetInput">Месячный бюджет, $</label>
+        <input id="budgetInput" type="number" min="1" step="1" inputmode="decimal" />
+      </div>
+      <div class="setting-group">
+        <label for="memoryInput">Постоянные инструкции / память</label>
+        <textarea id="memoryInput" rows="7" placeholder="Например: отвечай по-русски, учитывай мои проекты…"></textarea>
+        <small>Добавляется к каждому запросу. Чем длиннее память — тем выше расход входных токенов.</small>
+      </div>
+      <div class="setting-group" id="keyGroup">
+        <label for="accessKeyInput">Код доступа к приложению</label>
+        <input id="accessKeyInput" type="password" placeholder="Введи код доступа" autocomplete="current-password" autocapitalize="none" spellcheck="false" />
+        <small>Это не OpenAI API key. Код нужен только для защиты твоего серверного API от посторонних.</small>
+      </div>
+      <button id="saveSettings" class="primary-wide">Сохранить</button>
+      <button id="clearData" class="danger-wide">Удалить локальную историю</button>
+      <p class="privacy-note">OpenAI API key хранится только на сервере Railway. На iPhone сохраняется лишь код доступа к этому приложению.</p>
+    </section>
+
+    <section id="modelSheet" class="sheet compact hidden-panel" aria-hidden="true">
+      <div class="sheet-head"><strong>Модель</strong><button id="closeModelSheet" class="icon-btn">×</button></div>
+      <button class="model-option" data-model="gpt-6-luna"><span><b>GPT‑6 Luna</b><small>Быстро и дёшево</small></span><span>$</span></button>
+      <button class="model-option" data-model="gpt-6.1-sol"><span><b>GPT‑6.1 Sol</b><small>Лучший баланс</small></span><span>$$</span></button>
+      <button class="model-option" data-model="gpt-6-astra"><span><b>GPT‑6 Astra</b><small>Самые сложные задачи</small></span><span>$$$$</span></button>
+    </section>
+
+    <div id="backdrop" class="backdrop hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
