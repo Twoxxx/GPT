@@ -1,0 +1,18 @@
+{
+  "name": "Pocket GPT-6",
+  "short_name": "GPT-6",
+  "description": "Персональный GPT-6 чат с контролем API-бюджета",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
