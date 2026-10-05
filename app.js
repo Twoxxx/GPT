@@ -1,6 +1,8 @@
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = "pocket_gpt6_state_v1";
 const ACCESS_KEY = "pocket_gpt6_access_key";
+const MAX_FILES_PER_MESSAGE = 5;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MODEL_NAMES = {"gpt-6-luna":"GPT-6 Luna","gpt-6.1-sol":"GPT-6.1 Sol","gpt-6-astra":"GPT-6 Astra"};
 const PRICES = {
   "gpt-6-luna": { input: 0.10, cached: 0.01, output: 0.50 },
@@ -17,6 +19,8 @@ const defaultState = () => ({
 let state = loadState();
 let abortController = null;
 let streaming = false;
+let pendingAttachments = [];
+let uploadingFiles = 0;
 
 function loadState(){
   try { return { ...defaultState(), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") }; }
@@ -35,6 +39,12 @@ function ensureChat(){
   return c;
 }
 function money(v){ return `$${Number(v || 0).toFixed(v >= 1 ? 2 : 4)}`; }
+function formatBytes(v){
+  const n=Number(v||0);
+  if(n<1024) return `${n} Б`;
+  if(n<1024*1024) return `${(n/1024).toFixed(n<10*1024?1:0)} КБ`;
+  return `${(n/1024/1024).toFixed(n<10*1024*1024?1:0)} МБ`;
+}
 function estimateCost(model, usage={}){
   const p = PRICES[model] || PRICES["gpt-6.1-sol"];
   const input = Number(usage.input_tokens || 0);
@@ -47,7 +57,7 @@ function monthSpend(){
   const d = new Date(), ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   return state.chats.flatMap(c=>c.messages).filter(m => (m.createdAt||"").startsWith(ym)).reduce((s,m)=>s+(m.cost||0),0);
 }
-function toast(msg){ const el=$("toast"); el.textContent=msg; el.classList.remove("hidden"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.add("hidden"),2200); }
+function toast(msg){ const el=$("toast"); el.textContent=msg; el.classList.remove("hidden"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.add("hidden"),2600); }
 
 function render(){
   $("modelLabel").textContent = MODEL_NAMES[state.settings.model] || state.settings.model;
@@ -56,18 +66,34 @@ function render(){
   $("memoryInput").value = state.settings.memory;
   $("accessKeyInput").value = localStorage.getItem(ACCESS_KEY) || "";
   document.querySelectorAll("#reasoningOptions button").forEach(b=>b.classList.toggle("active", b.dataset.r===state.settings.reasoning));
-  renderBudget(); renderChat(); renderChatList();
+  renderBudget(); renderChat(); renderChatList(); renderAttachmentTray(); updateComposerActions();
 }
 function renderBudget(){
   const spent = monthSpend(), budget = Math.max(1,Number(state.settings.budget)||20), pct=Math.min(100,spent/budget*100);
   $("monthCost").textContent=money(spent); $("budgetLabel").textContent=`из $${budget} / месяц`; $("budgetFill").style.width=`${pct}%`;
+}
+function appendMessageFiles(wrap, attachments=[]){
+  if(!Array.isArray(attachments) || !attachments.length) return;
+  const files=document.createElement("div"); files.className="message-files";
+  for(const a of attachments){
+    const item=document.createElement("div"); item.className="message-file";
+    const icon=document.createElement("span"); icon.className="file-icon"; icon.textContent=String(a.type||"").startsWith("image/")?"▧":"▤";
+    const info=document.createElement("span"); info.className="file-info";
+    const name=document.createElement("strong"); name.textContent=a.name||"Файл";
+    const size=document.createElement("small"); size.textContent=formatBytes(a.size||0);
+    info.append(name,size); item.append(icon,info); files.appendChild(item);
+  }
+  wrap.appendChild(files);
 }
 function renderChat(){
   const c=activeChat(); const msgs=c?.messages||[]; $("welcome").classList.toggle("hidden",msgs.length>0);
   $("chat").innerHTML="";
   for(const m of msgs){
     const wrap=document.createElement("div"); wrap.className=`message ${m.role}`;
-    const bubble=document.createElement("div"); bubble.className="bubble"; bubble.textContent=m.content || ""; wrap.appendChild(bubble);
+    if(m.content || m.role==="assistant"){
+      const bubble=document.createElement("div"); bubble.className="bubble"; bubble.textContent=m.content || ""; wrap.appendChild(bubble);
+    }
+    appendMessageFiles(wrap,m.attachments);
     if(m.role==="assistant"){
       const meta=document.createElement("div"); meta.className="message-meta";
       const model=document.createElement("span"); model.textContent=MODEL_NAMES[m.model]||"GPT"; meta.appendChild(model);
@@ -87,7 +113,37 @@ function renderChatList(){
     row.append(btn,del); list.appendChild(row);
   }
 }
-function setStreaming(v){ streaming=v; $("sendBtn").classList.toggle("hidden",v); $("stopBtn").classList.toggle("hidden",!v); $("prompt").disabled=v; }
+function renderAttachmentTray(){
+  const tray=$("attachmentTray"); tray.innerHTML="";
+  for(const a of pendingAttachments){
+    const chip=document.createElement("div"); chip.className="attachment-chip";
+    const icon=document.createElement("span"); icon.textContent=String(a.type||"").startsWith("image/")?"▧":"▤";
+    const name=document.createElement("span"); name.className="attachment-name"; name.textContent=a.name||"Файл";
+    const remove=document.createElement("button"); remove.type="button"; remove.setAttribute("aria-label","Убрать файл"); remove.textContent="×";
+    remove.onclick=()=>{pendingAttachments=pendingAttachments.filter(x=>x.localId!==a.localId);renderAttachmentTray();updateComposerActions();};
+    chip.append(icon,name,remove); tray.appendChild(chip);
+  }
+  if(uploadingFiles>0){
+    const chip=document.createElement("div"); chip.className="attachment-chip uploading";
+    const dot=document.createElement("span"); dot.className="upload-spinner";
+    const name=document.createElement("span"); name.textContent=uploadingFiles>1?`Загрузка файлов: ${uploadingFiles}`:"Загрузка файла…";
+    chip.append(dot,name); tray.appendChild(chip);
+  }
+  tray.classList.toggle("hidden",pendingAttachments.length===0&&uploadingFiles===0);
+}
+function updateComposerActions(){
+  const hasMessage=Boolean(($("prompt").value||"").trim() || pendingAttachments.length);
+  $("sendBtn").disabled=streaming || uploadingFiles>0 || !hasMessage;
+  $("attachBtn").disabled=streaming || uploadingFiles>0 || pendingAttachments.length>=MAX_FILES_PER_MESSAGE;
+}
+function setStreaming(v){
+  streaming=v;
+  $("sendBtn").classList.toggle("hidden",v);
+  $("stopBtn").classList.toggle("hidden",!v);
+  $("prompt").disabled=v;
+  $("fileInput").disabled=v;
+  updateComposerActions();
+}
 function autoResize(){ const el=$("prompt"); el.style.height="auto"; el.style.height=Math.min(el.scrollHeight,150)+"px"; }
 
 function openPanel(id){ $("backdrop").classList.remove("hidden"); const p=$(id); p.classList.remove("hidden-panel"); requestAnimationFrame(()=>p.classList.add("open")); p.setAttribute("aria-hidden","false"); }
@@ -96,13 +152,62 @@ function closePanels(){
   $("backdrop").classList.add("hidden");
 }
 
+async function uploadFile(file){
+  if(!file || !file.size) throw new Error("Пустой файл.");
+  if(file.size>MAX_FILE_BYTES) throw new Error(`${file.name}: максимум 25 МБ.`);
+  const accessKey=localStorage.getItem(ACCESS_KEY)||"";
+  const response=await fetch("/api/files",{
+    method:"POST",
+    headers:{
+      "Content-Type":file.type||"application/octet-stream",
+      "x-file-name":encodeURIComponent(file.name||"file"),
+      ...(accessKey?{"x-app-key":accessKey}:{})
+    },
+    body:file
+  });
+  const raw=await response.text(); let data={};
+  try{data=JSON.parse(raw);}catch{}
+  if(!response.ok){
+    const msg=data.error?.message||data.error||raw||`HTTP ${response.status}`;
+    if(response.status===401 && /APP_ACCESS_KEY_(REQUIRED|INVALID)/.test(String(msg))) openPanel("settings");
+    if(response.status===503 && String(msg).includes("OPENAI_API_KEY_NOT_CONFIGURED")) throw new Error("На сервере не задан OPENAI_API_KEY.");
+    if(response.status===413 || String(msg).includes("FILE_TOO_LARGE")) throw new Error(`${file.name}: максимум 25 МБ.`);
+    throw new Error(msg);
+  }
+  if(!data.id) throw new Error("OpenAI не вернул ID файла.");
+  return {localId:uid(),fileId:data.id,name:data.filename||file.name,size:Number(data.bytes||file.size),type:file.type||data.type||"application/octet-stream"};
+}
+
+async function addFiles(fileList){
+  const selected=Array.from(fileList||[]);
+  if(!selected.length || streaming) return;
+  const free=Math.max(0,MAX_FILES_PER_MESSAGE-pendingAttachments.length);
+  if(!free){toast("Можно прикрепить до 5 файлов к одному сообщению.");return;}
+  if(selected.length>free) toast(`Добавлю первые ${free} из ${selected.length} файлов.`);
+
+  for(const file of selected.slice(0,free)){
+    uploadingFiles+=1; renderAttachmentTray(); updateComposerActions();
+    try{
+      const attachment=await uploadFile(file);
+      pendingAttachments.push(attachment);
+    }catch(err){
+      toast(String(err.message||err).slice(0,180));
+    }finally{
+      uploadingFiles=Math.max(0,uploadingFiles-1); renderAttachmentTray(); updateComposerActions();
+    }
+  }
+}
+
 async function sendMessage(text){
-  if(streaming||!text.trim()) return;
+  const attachments=pendingAttachments.map(a=>({...a}));
+  if(streaming||uploadingFiles>0||(!text.trim()&&!attachments.length)) return;
   const c=ensureChat();
-  const userMsg={id:uid(),role:"user",content:text.trim(),createdAt:now()}; c.messages.push(userMsg);
-  if(c.messages.filter(m=>m.role==="user").length===1) c.title=text.trim().replace(/\s+/g," ").slice(0,48);
+  const cleanText=text.trim();
+  const userMsg={id:uid(),role:"user",content:cleanText,attachments,createdAt:now()}; c.messages.push(userMsg);
+  if(c.messages.filter(m=>m.role==="user").length===1) c.title=(cleanText||attachments[0]?.name||"Файл").replace(/\s+/g," ").slice(0,48);
+  pendingAttachments=[];
   c.updatedAt=now(); saveState(); render();
-  $("prompt").value=""; autoResize();
+  $("prompt").value=""; autoResize(); renderAttachmentTray(); updateComposerActions();
 
   const assistantMsg={id:uid(),role:"assistant",content:"",createdAt:now(),model:state.settings.model,reasoning:state.settings.reasoning,cost:null};
   c.messages.push(assistantMsg); c.updatedAt=now(); saveState(); render();
@@ -119,7 +224,7 @@ async function sendMessage(text){
         model:state.settings.model,
         reasoning:state.settings.reasoning,
         instructions:state.settings.memory,
-        messages:c.messages.filter(m=>m.id!==assistantMsg.id).slice(-40).map(m=>({role:m.role,content:m.content}))
+        messages:c.messages.filter(m=>m.id!==assistantMsg.id).slice(-40).map(m=>({role:m.role,content:m.content,attachments:m.attachments||[]}))
       }),
       signal:abortController.signal
     });
@@ -164,18 +269,20 @@ async function sendMessage(text){
 }
 
 $("composer").addEventListener("submit",e=>{e.preventDefault();sendMessage($("prompt").value);});
-$("prompt").addEventListener("input",autoResize);
+$("prompt").addEventListener("input",()=>{autoResize();updateComposerActions();});
 $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMessage($("prompt").value);}});
+$("attachBtn").onclick=()=>$("fileInput").click();
+$("fileInput").addEventListener("change",async e=>{await addFiles(e.target.files);e.target.value="";});
 $("stopBtn").onclick=()=>abortController?.abort();
 $("menuBtn").onclick=()=>openPanel("drawer"); $("settingsBtn").onclick=()=>openPanel("settings"); $("modelBtn").onclick=()=>openPanel("modelSheet");
 $("closeDrawer").onclick=$("closeSettings").onclick=$("closeModelSheet").onclick=$("backdrop").onclick=closePanels;
-$("newChatBtn").onclick=()=>{const c={id:uid(),title:"Новый чат",createdAt:now(),updatedAt:now(),messages:[]};state.chats.unshift(c);state.activeChatId=c.id;saveState();closePanels();render();};
+$("newChatBtn").onclick=()=>{const c={id:uid(),title:"Новый чат",createdAt:now(),updatedAt:now(),messages:[]};state.chats.unshift(c);state.activeChatId=c.id;pendingAttachments=[];saveState();closePanels();render();};
 $("modelSelect").onchange=e=>{state.settings.model=e.target.value;saveState();render();};
 document.querySelectorAll("#reasoningOptions button").forEach(b=>b.onclick=()=>{state.settings.reasoning=b.dataset.r;saveState();render();});
 document.querySelectorAll(".model-option").forEach(b=>b.onclick=()=>{state.settings.model=b.dataset.model;saveState();closePanels();render();toast(`${MODEL_NAMES[b.dataset.model]} выбран`);});
 $("saveSettings").onclick=()=>{state.settings.model=$("modelSelect").value;state.settings.budget=Math.max(1,Number($("budgetInput").value)||20);state.settings.memory=$("memoryInput").value.slice(0,24000);const key=$("accessKeyInput").value.trim();if(key)localStorage.setItem(ACCESS_KEY,key);else localStorage.removeItem(ACCESS_KEY);saveState();closePanels();render();toast("Настройки сохранены");};
-$("clearData").onclick=()=>{if(confirm("Удалить все локальные чаты и статистику расходов на этом устройстве?")){state=defaultState();localStorage.removeItem(ACCESS_KEY);saveState();render();toast("История удалена");}};
-document.querySelectorAll(".suggestion").forEach(b=>b.onclick=()=>{$("prompt").value=b.textContent;autoResize();$("prompt").focus();});
+$("clearData").onclick=()=>{if(confirm("Удалить все локальные чаты и статистику расходов на этом устройстве?")){state=defaultState();pendingAttachments=[];localStorage.removeItem(ACCESS_KEY);saveState();render();toast("История удалена");}};
+document.querySelectorAll(".suggestion").forEach(b=>b.onclick=()=>{$("prompt").value=b.textContent;autoResize();updateComposerActions();$("prompt").focus();});
 
 if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}
 render(); autoResize();
