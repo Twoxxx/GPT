@@ -1,12 +1,12 @@
 {
   "name": "pocket-gpt6",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": "24.x"
-  },
-  "scripts": {
-    "start": "node server.js"
+  "engines": {"node": "24.x"},
+  "scripts": {"start": "node server.js"},
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0"
   }
 }
