@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KAYADA — Motion Test</title>
+<style>
+  :root { color-scheme: dark; --accent:#f69b50; --muted:#9399a2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#101113; color:#f4f4f2; font-family:Arial,Helvetica,sans-serif; }
+  main { max-width:1050px; margin:auto; padding:24px; display:grid; grid-template-columns:minmax(280px,410px) 1fr; gap:32px; align-items:start; }
+  .stage { position:relative; width:100%; aspect-ratio:9/16; background:#050506; overflow:hidden; border-radius:8px; container-type:inline-size; isolation:isolate; }
+  video { display:block; width:100%; height:100%; object-fit:contain; }
+  #empty { position:absolute; inset:0; display:grid; place-content:center; text-align:center; color:var(--muted); padding:30px; line-height:1.6; pointer-events:none; }
+  .overlay { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  #accent { position:absolute; top:16%; left:7%; right:7%; opacity:0; }
+  #accent::before { content:""; position:absolute; inset:-45% -18%; z-index:-1; background:radial-gradient(ellipse,rgba(9,12,15,.76),rgba(9,12,15,0) 72%); }
+  .eyebrow { display:flex; align-items:center; gap:9px; font-size:2.5cqw; font-weight:700; letter-spacing:.19em; color:#dddeda; margin-bottom:3.6cqw; }
+  .eyebrow::before { content:""; width:6cqw; height:2px; background:var(--accent); }
+  .reveal { overflow:hidden; }
+  .big { font-size:10.3cqw; font-weight:900; letter-spacing:-.055em; line-height:1.04; white-space:nowrap; text-shadow:0 2px 16px rgba(0,0,0,.2); will-change:transform,opacity; }
+  .second { margin-top:1.6cqw; }
+  .sign { color:var(--accent); margin-right:.12em; }
+  #diagram { position:absolute; top:11%; left:6%; width:88%; padding:4.6cqw 4cqw 2.8cqw; background:rgba(15,19,23,.94); border:1px solid rgba(255,255,255,.13); border-top:2px solid var(--accent); box-shadow:0 12px 35px rgba(0,0,0,.24); opacity:0; }
+  .diagram-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .diagram-title { font-size:3cqw; font-weight:700; letter-spacing:.1em; }
+  .diagram-label { font-size:2.3cqw; color:#aeb4bd; }
+  svg { display:block; width:100%; overflow:visible; }
+  svg text { font-family:Arial,Helvetica,sans-serif; font-weight:700; text-anchor:middle; dominant-baseline:middle; }
+  .wire { fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:1; }
+  .node rect { fill:#222930; stroke:#49515b; stroke-width:1; }
+  .node text { fill:#f1f2f0; font-size:15px; }
+  #engine rect { fill:#f0f0eb; stroke:none; }
+  #engine text { fill:#15191d; font-size:19px; }
+  .diagram-foot { font-size:2.3cqw; color:#919ba7; }
+  h1 { margin:0 0 12px; font-size:28px; letter-spacing:-.04em; }
+  p { color:#b1b5bd; line-height:1.55; }
+  .tag { font-size:11px; color:var(--accent); letter-spacing:.16em; margin-bottom:12px; }
+  .button,button { display:inline-block; background:#ededE8; color:#141619; border:0; padding:13px 17px; border-radius:5px; font:700 14px Arial,sans-serif; cursor:pointer; }
+  .button input { display:none; }
+  button.secondary { background:#292d33; color:#eee; }
+  .panel { padding:18px; border:1px solid #30343b; border-radius:7px; margin-top:18px; }
+  .check { display:flex; align-items:center; gap:10px; font-size:14px; margin-bottom:14px; }
+  input[type=checkbox] { accent-color:var(--accent); }
+  .times { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+  .times label { font-size:12px; color:#aeb4bd; }
+  input[type=number] { display:block; width:100%; margin-top:7px; padding:9px; border:1px solid #424750; border-radius:4px; background:#181b20; color:#fff; font-size:15px; }
+  .note { font-size:12px; margin:12px 0 0; }
+  .transport { display:flex; gap:10px; align-items:center; margin-top:12px; }
+  #clock { margin-left:auto; font:13px monospace; color:#b7bdc7; }
+  #seek { width:100%; accent-color:var(--accent); margin-top:16px; }
+  #fileName { word-break:break-word; font-size:12px; }
+  @media(max-width:720px) {
+    main { grid-template-columns:1fr; padding:16px; gap:22px; }
+    .preview { max-width:390px; width:100%; margin:auto; }
+    h1 { font-size:24px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <section class="preview">
+    <div class="stage">
+      <video id="video" playsinline preload="metadata"></video>
+      <div id="empty">KAYADA<br>Выберите готовый Reel</div>
+      <div class="overlay" id="overlay" aria-hidden="true">
+        <div id="accent">
+          <div class="eyebrow">СВАП / ИНТЕГРАЦИЯ</div>
+          <div class="reveal"><div class="big" id="line1">УСТАНОВЛЕН</div></div>
+          <div class="reveal second"><div class="big" id="line2"><span class="sign">≠</span>ГОТОВ</div></div>
+        </div>
+        <div id="diagram">
+          <div class="diagram-heading"><span class="diagram-title">РАБОТА В СВЯЗКЕ</span><span class="diagram-label">СХЕМА</span></div>
+          <svg viewBox="0 0 480 230">
+            <path id="w1" class="wire" pathLength="1" d="M240 110 V65"/>
+            <path id="w2" class="wire" pathLength="1" d="M160 135 H95 V169"/>
+            <path id="w3" class="wire" pathLength="1" d="M320 135 H385 V169"/>
+            <g class="node" id="engine"><rect x="160" y="110" width="160" height="50" rx="3"/><text x="240" y="136">ДВИГАТЕЛЬ</text></g>
+            <g class="node" id="n1"><rect x="170" y="23" width="140" height="42" rx="3"/><text x="240" y="45">КОРОБКА</text></g>
+            <g class="node" id="n2"><rect x="17" y="169" width="156" height="42" rx="3"/><text x="95" y="191">ЭЛЕКТРИКА</text></g>
+            <g class="node" id="n3"><rect x="304" y="169" width="162" height="42" rx="3"/><text x="385" y="191">ОХЛАЖДЕНИЕ</text></g>
+          </svg>
+          <div class="diagram-foot">Показаны связи, не полный список работ</div>
+        </div>
+      </div>
+    </div>
+    <input id="seek" type="range" min="0" max="21" step=".01" value="0" aria-label="Позиция воспроизведения">
+    <div class="transport">
+      <button id="play">▶ Смотреть</button>
+      <button id="restart" class="secondary">↺</button>
+      <span id="clock">0.00 / —</span>
+    </div>
+  </section>
+  <section>
+    <div class="tag">KAYADA / MOTION STUDY 01</div>
+    <h1>Графика на вашем Reel</h1>
+    <p>Монтаж, звук и вшитые субтитры остаются исходными. Графику можно отключать во время просмотра.</p>
+    <label class="button">Выбрать Reel<input id="file" type="file" accept="video/*"></label>
+    <p id="fileName">Видео остаётся на вашем устройстве и обрабатывается только браузером.</p>
+    <div class="panel">
+      <label class="check"><input id="enabled" type="checkbox" checked>Показывать дополнительную графику</label>
+      <p class="note">Отключите для сравнения с оригиналом на том же кадре.</p>
+    </div>
+    <div class="panel">
+      <label class="check"><input id="showAccent" type="checkbox" checked>01 — Типографический акцент</label>
+      <div class="times">
+        <label>Начало, сек.<input id="aStart" type="number" min="0" step=".1" value="2.0"></label>
+        <label>Конец, сек.<input id="aEnd" type="number" min="0" step=".1" value="4.3"></label>
+      </div>
+      <p class="note">Вторая строка появляется через 0,55 секунды после первой. Подгоните её к слову «Нет».</p>
+    </div>
+    <div class="panel">
+      <label class="check"><input id="showDiagram" type="checkbox" checked>02 — Схема взаимодействия</label>
+      <div class="times">
+        <label>Начало, сек.<input id="dStart" type="number" min="0" step=".1" value="7.2"></label>
+        <label>Конец, сек.<input id="dEnd" type="number" min="0" step=".1" value="12.4"></label>
+      </div>
+      <p class="note">Связи раскрываются последовательно. Для финального варианта их нужно совместить с названиями систем.</p>
+    </div>
+    <p class="note">Шрифт в прототипе — системный Arial. Это тест композиции и движения.</p>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const video=$("video");
+let fileURL=null;
+const clamp=x=>Math.max(0,Math.min(1,x));
+const ease=x=>1-Math.pow(1-clamp(x),3);
+const num=id=>Number($(id).value);
+function envelope(t,start,end){
+  if(end<=start||t<start||t>=end)return 0;
+  return Math.min(clamp((t-start)/.22),clamp((end-t)/.20));
+}
+function animateLine(el,progress){
+  const p=ease(progress);
+  el.style.opacity=p;
+  el.style.transform=`translateY(${(1-p)*110}%)`;
+}
+function draw(){
+  const t=video.currentTime||0;
+  const duration=Number.isFinite(video.duration)?video.duration:0;
+  $("overlay").style.visibility=$("enabled").checked?"visible":"hidden";
+  const a=num("aStart"),b=num("aEnd");
+  const alpha=$("showAccent").checked?envelope(t,a,b):0;
+  $("accent").style.opacity=alpha;
+  animateLine($("line1"),(t-a)/.32);
+  animateLine($("line2"),(t-a-.55)/.28);
+  const ds=num("dStart"),de=num("dEnd");
+  const da=$("showDiagram").checked?envelope(t,ds,de):0;
+  $("diagram").style.opacity=da;
+  $("diagram").style.transform=`translateY(${(1-ease((t-ds)/.3))*12}px)`;
+  const span=Math.max(.1,de-ds);
+  [0.12,0.36,0.57].forEach((fraction,i)=>{
+    const p=ease((t-ds-span*fraction)/.38);
+    $("w"+(i+1)).style.strokeDashoffset=1-p;
+    $("n"+(i+1)).style.opacity=p;
+  });
+  $("seek").max=duration||21;
+  $("seek").value=t;
+  $("clock").textContent=`${t.toFixed(2)} / ${duration?duration.toFixed(2):"—"}`;
+  $("play").textContent=video.paused?"▶ Смотреть":"❚❚ Пауза";
+  requestAnimationFrame(draw);
+}
+$("file").addEventListener("change",event=>{
+  const file=event.target.files[0];
+  if(!file)return;
+  video.pause();
+  if(fileURL)URL.revokeObjectURL(fileURL);
+  fileURL=URL.createObjectURL(file);
+  video.src=fileURL;
+  video.load();
+  $("empty").style.display="none";
+  $("fileName").textContent=file.name+" — файл не загружается на сервер";
+});
+$("play").addEventListener("click",async()=>{
+  if(!video.src){$("file").click();return;}
+  if(video.paused){
+    try{await video.play();}
+    catch{$("fileName").textContent="Не удалось воспроизвести файл. Попробуйте MP4 с кодеком H.264.";}
+  }else video.pause();
+});
+$("restart").addEventListener("click",()=>{if(video.src)video.currentTime=0;});
+$("seek").addEventListener("input",event=>{if(Number.isFinite(video.duration))video.currentTime=Number(event.target.value);});
+video.addEventListener("error",()=>{$("fileName").textContent="Браузер не смог открыть видео. Для теста подойдёт MP4 H.264/AAC.";});
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
