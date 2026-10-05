@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = "pocket_gpt6_state_v1";
 const ACCESS_KEY = "pocket_gpt6_access_key";
 const MAX_FILES_PER_MESSAGE = 5;
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILE_BYTES = 49 * 1024 * 1024;\nconst MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const MODEL_NAMES = {"gpt-6-luna":"GPT-6 Luna","gpt-6.1-sol":"GPT-6.1 Sol","gpt-6-astra":"GPT-6 Astra"};
 const PRICES = {
   "gpt-6-luna": { input: 0.10, cached: 0.01, output: 0.50 },
@@ -45,6 +45,16 @@ function formatBytes(v){
   if(n<1024*1024) return `${(n/1024).toFixed(n<10*1024?1:0)} КБ`;
   return `${(n/1024/1024).toFixed(n<10*1024*1024?1:0)} МБ`;
 }
+function isVideoFile(file){
+  const type=String(file?.type||"").toLowerCase();
+  const name=String(file?.name||"").toLowerCase();
+  return type.startsWith("video/") || /\\.(mp4|mov|m4v|webm|mpeg|mpg)$/.test(name);
+}
+function attachmentIcon(a){
+  if(String(a?.kind||"")==="video" || String(a?.type||"").startsWith("video/")) return "▶";
+  if(String(a?.type||"").startsWith("image/")) return "▧";
+  return "▤";
+}
 function estimateCost(model, usage={}){
   const p = PRICES[model] || PRICES["gpt-6.1-sol"];
   const input = Number(usage.input_tokens || 0);
@@ -77,7 +87,7 @@ function appendMessageFiles(wrap, attachments=[]){
   const files=document.createElement("div"); files.className="message-files";
   for(const a of attachments){
     const item=document.createElement("div"); item.className="message-file";
-    const icon=document.createElement("span"); icon.className="file-icon"; icon.textContent=String(a.type||"").startsWith("image/")?"▧":"▤";
+    const icon=document.createElement("span"); icon.className="file-icon"; icon.textContent=attachmentIcon(a);
     const info=document.createElement("span"); info.className="file-info";
     const name=document.createElement("strong"); name.textContent=a.name||"Файл";
     const size=document.createElement("small"); size.textContent=formatBytes(a.size||0);
@@ -117,7 +127,7 @@ function renderAttachmentTray(){
   const tray=$("attachmentTray"); tray.innerHTML="";
   for(const a of pendingAttachments){
     const chip=document.createElement("div"); chip.className="attachment-chip";
-    const icon=document.createElement("span"); icon.textContent=String(a.type||"").startsWith("image/")?"▧":"▤";
+    const icon=document.createElement("span"); icon.textContent=attachmentIcon(a);
     const name=document.createElement("span"); name.className="attachment-name"; name.textContent=a.name||"Файл";
     const remove=document.createElement("button"); remove.type="button"; remove.setAttribute("aria-label","Убрать файл"); remove.textContent="×";
     remove.onclick=()=>{pendingAttachments=pendingAttachments.filter(x=>x.localId!==a.localId);renderAttachmentTray();updateComposerActions();};
@@ -126,7 +136,7 @@ function renderAttachmentTray(){
   if(uploadingFiles>0){
     const chip=document.createElement("div"); chip.className="attachment-chip uploading";
     const dot=document.createElement("span"); dot.className="upload-spinner";
-    const name=document.createElement("span"); name.textContent=uploadingFiles>1?`Загрузка файлов: ${uploadingFiles}`:"Загрузка файла…";
+    const name=document.createElement("span"); name.textContent=uploadingFiles>1?`Обработка файлов: ${uploadingFiles}`:"Загрузка / обработка…";
     chip.append(dot,name); tray.appendChild(chip);
   }
   tray.classList.toggle("hidden",pendingAttachments.length===0&&uploadingFiles===0);
@@ -154,12 +164,14 @@ function closePanels(){
 
 async function uploadFile(file){
   if(!file || !file.size) throw new Error("Пустой файл.");
-  if(file.size>MAX_FILE_BYTES) throw new Error(`${file.name}: максимум 25 МБ.`);
+  const video=isVideoFile(file);
+  const limit=video?MAX_VIDEO_BYTES:MAX_FILE_BYTES;
+  if(file.size>limit) throw new Error(`${file.name}: максимум ${video?"100":"49"} МБ.`);
   const accessKey=localStorage.getItem(ACCESS_KEY)||"";
-  const response=await fetch("/api/files",{
+  const response=await fetch(video?"/api/videos":"/api/files",{
     method:"POST",
     headers:{
-      "Content-Type":file.type||"application/octet-stream",
+      "Content-Type":file.type||(video?"video/mp4":"application/octet-stream"),
       "x-file-name":encodeURIComponent(file.name||"file"),
       ...(accessKey?{"x-app-key":accessKey}:{})
     },
@@ -171,8 +183,12 @@ async function uploadFile(file){
     const msg=data.error?.message||data.error||raw||`HTTP ${response.status}`;
     if(response.status===401 && /APP_ACCESS_KEY_(REQUIRED|INVALID)/.test(String(msg))) openPanel("settings");
     if(response.status===503 && String(msg).includes("OPENAI_API_KEY_NOT_CONFIGURED")) throw new Error("На сервере не задан OPENAI_API_KEY.");
-    if(response.status===413 || String(msg).includes("FILE_TOO_LARGE")) throw new Error(`${file.name}: максимум 25 МБ.`);
+    if(response.status===413 || /FILE_TOO_LARGE|VIDEO_TOO_LARGE/.test(String(msg))) throw new Error(`${file.name}: максимум ${video?"100":"49"} МБ.`);
     throw new Error(msg);
+  }
+  if(video){
+    if(data.kind!=="video" || !Array.isArray(data.frameFileIds) || !data.frameFileIds.length) throw new Error("Видео загрузилось, но не удалось подготовить кадры для Astra.");
+    return {localId:uid(),...data};
   }
   if(!data.id) throw new Error("OpenAI не вернул ID файла.");
   return {localId:uid(),fileId:data.id,name:data.filename||file.name,size:Number(data.bytes||file.size),type:file.type||data.type||"application/octet-stream"};
