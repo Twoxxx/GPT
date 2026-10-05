@@ -2,7 +2,8 @@ const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = "pocket_gpt6_state_v1";
 const ACCESS_KEY = "pocket_gpt6_access_key";
 const MAX_FILES_PER_MESSAGE = 5;
-const MAX_FILE_BYTES = 49 * 1024 * 1024;\nconst MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_FILE_BYTES = 49 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const MODEL_NAMES = {"gpt-6-luna":"GPT-6 Luna","gpt-6.1-sol":"GPT-6.1 Sol","gpt-6-astra":"GPT-6 Astra"};
 const PRICES = {
   "gpt-6-luna": { input: 0.10, cached: 0.01, output: 0.50 },
